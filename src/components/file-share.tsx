@@ -1,8 +1,5 @@
 "use client"
-
-import type React from "react"
-
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -24,6 +21,7 @@ import {
 } from "lucide-react"
 import { Badge } from "./ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table"
+import { open } from "@tauri-apps/plugin-dialog";
 
 interface ServiceConfig {
   port: string
@@ -44,9 +42,6 @@ interface AccessLog {
 
 export function FileShare() {
   const { t } = useLanguage()
-
-  const sftpFolderInputRef = useRef<HTMLInputElement>(null)
-  const smbFolderInputRef = useRef<HTMLInputElement>(null)
 
   const [sftpService, setSftpService] = useState<ServiceConfig>({
     port: "22",
@@ -114,46 +109,28 @@ export function FileShare() {
     saveSmbService(newConfig)
   }
 
-  const handleSftpFolderSelect = () => {
-    sftpFolderInputRef.current?.click()
-  }
+  const handleSftpFolderSelect = async () => {
+    const folder = await open({
+      multiple: false,
+      directory: true,
+      canCreateDirectories: true,
+    })
 
-  const handleSmbFolderSelect = () => {
-    smbFolderInputRef.current?.click()
-  }
-
-  const handleSftpFolderChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files
-    if (files && files.length > 0) {
-      const firstFile = files[0]
-      const relativePath = firstFile.webkitRelativePath
-      const folderName = relativePath.split("/")[0]
-
-      const fullPath = `/home/user/${folderName}`
-
-      console.log(t("sftpFolderSelection"), { relativePath, folderName, fullPath })
-
-      saveSftpService({ ...sftpService, sharedFolder: fullPath })
+    if(folder) {
+      saveSftpService({ ...sftpService, sharedFolder: folder })
     }
-
-    event.target.value = ""
   }
 
-  const handleSmbFolderChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files
-    if (files && files.length > 0) {
-      const firstFile = files[0]
-      const relativePath = firstFile.webkitRelativePath
-      const folderName = relativePath.split("/")[0]
+  const handleSmbFolderSelect = async () => {
+    const folder = await open({
+      multiple: false,
+      directory: true,
+      canCreateDirectories: true,
+    })
 
-      const fullPath = `/home/user/${folderName}`
-
-      console.log(t("smbFolderSelection"), { relativePath, folderName, fullPath })
-
-      saveSmbService({ ...smbService, sharedFolder: fullPath })
+    if(folder) {
+      saveSmbService({ ...sftpService, sharedFolder: folder })
     }
-
-    event.target.value = ""
   }
 
   const getActionIcon = (action: string) => {
@@ -183,26 +160,6 @@ export function FileShare() {
   return (
     <div className="p-6 space-y-6 h-full flex flex-col">
       <h2 className="text-3xl font-bold">{t("fileShare")}</h2>
-
-      <input
-        ref={sftpFolderInputRef}
-        type="file"
-        webkitdirectory=""
-        directory=""
-        multiple
-        style={{ display: "none" }}
-        onChange={handleSftpFolderChange}
-      />
-      <input
-        ref={smbFolderInputRef}
-        type="file"
-        webkitdirectory=""
-        directory=""
-        multiple
-        style={{ display: "none" }}
-        onChange={handleSmbFolderChange}
-      />
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader>

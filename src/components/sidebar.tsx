@@ -19,8 +19,8 @@ export function Sidebar({ activeTab, onTabChange, isCollapsed, onToggle }: Sideb
 
   const menuItems = [
     { id: "dashboard", icon: LayoutDashboard, label: t("dashboard") },
-    { id: "file-share", icon: FolderOpen, label: t("advancedFileShare") },
     { id: "web-server", icon: Globe, label: t("webServer") },
+    { id: "file-share", icon: FolderOpen, label: t("advancedFileShare") },
     { id: "quick-actions", icon: Zap, label: t("quickActions") },
     { id: "personal-data", icon: Database, label: t("personalData") },
     { id: "ldap-server", icon: Server, label: t("ldapServer") },

@@ -1,5 +1,5 @@
 import "./styles/globals.css";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dashboard } from "./components/dashboard";
 import { FileShare } from "./components/file-share";
 import { QuickActions } from "./components/quick-actions";
@@ -10,6 +10,9 @@ import { LanguageProvider } from "./components/language-provider";
 import { Sidebar } from "./components/sidebar";
 import { BottomNavigation } from "./components/bottom-navigation";
 import { WebServer } from "./components/web-server";
+import { emit, listen } from "@tauri-apps/api/event";
+
+type NoticePayload = { title: string; body: string };
 
 const App = () => {
   const [activeTab, setActiveTab] = useState("dashboard")
@@ -49,7 +52,7 @@ const App = () => {
             onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
           />
           <div className="flex-1 flex flex-col h-full">
-            <main className="flex-1 min-h-0 overflow-y-auto gap-4">{renderContent()}</main>
+            <main className="flex-1 min-h-0 overflow-y-auto">{renderContent()}</main>
             <BottomNavigation
               onAddShortcut={handleAddShortcut}
               sidebarCollapsed={sidebarCollapsed}

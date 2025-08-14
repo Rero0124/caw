@@ -8,9 +8,21 @@ import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog"
 import { useLanguage } from "./language-provider"
 import { Activity, Server, Users, HardDrive, Cpu, MemoryStick, Wifi, X } from "lucide-react"
+import { listen } from "@tauri-apps/api/event"
+import { invoke } from "@tauri-apps/api/core"
+import { truncate } from "../lib/utils"
+
+type Snapshot = {
+  cpu: { global: number; per_core: number[]; freq_ghz: number; cores: number; temp_c?: number | null; top: { name: string; cpu: number; mem: number }[] };
+  mem: { total: number; used: number; available: number; cached?: number | null; buffers?: number | null; swap_total: number; swap_used: number };
+  disk: { parts: { name: string; mount: string; fs: string; total: number; used: number }[]; read_bps?: number | null; write_bps?: number | null };
+  net: { name: string; ipv4: string[]; mac?: string | null; speed_mbps?: number | null; rx_bps: number; tx_bps: number; rx_packets: number; tx_packets: number }[];
+};
 
 export function Dashboard() {
   const { t } = useLanguage()
+
+  const [snap, setSnap] = useState<Snapshot | null>(null);
 
   const [systemResources, setSystemResources] = useState({
     cpu: { usage: 45, cores: 8, temperature: 65, frequency: 3.2 },
@@ -182,7 +194,29 @@ export function Dashboard() {
       )
     }, 5000)
 
-    return () => clearInterval(interval)
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+
+    (async () => {
+      // 1) 먼저 구독을 건다 (이벤트 놓치지 않도록)
+      unlisten = await listen<Snapshot>("metrics://tick", (e) => {
+        if (!cancelled) setSnap(e.payload);
+      });
+
+      // 2) 초기 1회 스냅샷(화면 빈칸 방지)
+      try {
+        const initial = await invoke<Snapshot>("read_once");
+        if (!cancelled) setSnap(initial);
+      } catch (e) {
+        console.error("read_once failed:", e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+      clearInterval(interval)
+    }
   }, [])
 
   const formatUptime = (seconds: number) => {
@@ -200,7 +234,8 @@ export function Dashboard() {
   }
 
   const renderResourceDetails = (resource: string) => {
-    switch (resource) {
+    if(snap) {
+switch (resource) {
       case "cpu":
         return (
           <div className="space-y-4">
@@ -208,13 +243,13 @@ export function Dashboard() {
               <div>
                 <h4 className="font-medium mb-2">{t("coreUsage")}</h4>
                 <div className="space-y-2">
-                  {detailData.cpu.coreUsage.map((usage, index) => (
+                  {snap.cpu.per_core.map((usage, index) => (
                     <div key={index} className="flex items-center space-x-2">
                       <span className="text-sm w-12">
                         {t("core")} {index + 1}
                       </span>
-                      <Progress value={usage} className="flex-1" />
-                      <span className="text-sm w-12">{usage}%</span>
+                      <Progress value={usage} className="flex-1 transition-all duration-1000 ease-out" />
+                      <span className="text-sm w-12">{usage.toFixed(2)}%</span>
                     </div>
                   ))}
                 </div>
@@ -222,10 +257,10 @@ export function Dashboard() {
               <div>
                 <h4 className="font-medium mb-2">{t("processes")}</h4>
                 <div className="space-y-2">
-                  {detailData.cpu.processes.map((process, index) => (
+                  {snap.cpu.top.map((process, index) => (
                     <div key={index} className="flex justify-between text-sm">
-                      <span>{process.name}</span>
-                      <span>{process.usage.toFixed(1)}%</span>
+                      <span>{truncate(process.name, 20)}</span>
+                      <span>{process.cpu.toFixed(3)}%</span>
                     </div>
                   ))}
                 </div>
@@ -233,15 +268,15 @@ export function Dashboard() {
             </div>
             <div className="grid grid-cols-3 gap-4 pt-4 border-t">
               <div className="text-center">
-                <div className="text-2xl font-bold">{systemResources.cpu.temperature}°C</div>
+                <div className="text-2xl font-bold">{snap.cpu.temp_c ? `${snap.cpu.temp_c}°C` : "N/A"}</div>
                 <div className="text-sm text-muted-foreground">{t("temperature")}</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold">{systemResources.cpu.frequency.toFixed(1)} GHz</div>
+                <div className="text-2xl font-bold">{snap.cpu.freq_ghz.toFixed(2)} GHz</div>
                 <div className="text-sm text-muted-foreground">{t("frequency")}</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold">{systemResources.cpu.cores}</div>
+                <div className="text-2xl font-bold">{snap.cpu.per_core.length}</div>
                 <div className="text-sm text-muted-foreground">{t("cores")}</div>
               </div>
             </div>
@@ -251,20 +286,66 @@ export function Dashboard() {
         return (
           <div className="space-y-4">
             <div className="space-y-3">
-              {detailData.memory.breakdown.map((item, index) => (
-                <div key={index} className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <div className={`w-4 h-4 rounded ${item.color}`}></div>
-                    <span>{item.type}</span>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-medium">{item.value.toFixed(1)} GB</div>
-                    <div className="text-sm text-muted-foreground">
-                      {((item.value / systemResources.memory.total) * 100).toFixed(1)}%
-                    </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 rounded bg-blue-500"></div>
+                  <span>{t("used")}</span>
+                </div>
+                <div className="text-right">
+                  <div className="font-medium">{(snap.mem.used / 1024 / 1024 / 1024).toFixed(2)} GB</div>
+                  <div className="text-sm text-muted-foreground">
+                    {((snap.mem.used / snap.mem.total) * 100).toFixed(2)}%
                   </div>
                 </div>
-              ))}
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 rounded bg-green-500"></div>
+                  <span>{t("cached")}</span>
+                </div>
+                <div className="text-right">
+                  <div className="font-medium">{((snap.mem.cached ?? 0) / 1024 / 1024 / 1024).toFixed(2)} GB</div>
+                  <div className="text-sm text-muted-foreground">
+                    {((snap.mem.cached ?? 0 / snap.mem.total) * 100).toFixed(2)}%
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 rounded bg-yellow-500"></div>
+                  <span>{t("buffers")}</span>
+                </div>
+                <div className="text-right">
+                  <div className="font-medium">{((snap.mem.buffers ?? 0) / 1024 / 1024 / 1024).toFixed(2)} GB</div>
+                  <div className="text-sm text-muted-foreground">
+                    {((snap.mem.buffers ?? 0 / snap.mem.total) * 100).toFixed(2)}%
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 rounded bg-red-500"></div>
+                  <span>{t("swap")}</span>
+                </div>
+                <div className="text-right">
+                  <div className="font-medium">{(snap.mem.swap_used / 1024 / 1024 / 1024).toFixed(2)} GB</div>
+                  <div className="text-sm text-muted-foreground">
+                    {((snap.mem.swap_used / snap.mem.total) * 100).toFixed(2)}%
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 rounded bg-gray-300"></div>
+                  <span>{t("available")}</span>
+                </div>
+                <div className="text-right">
+                  <div className="font-medium">{(snap.mem.available / 1024 / 1024 / 1024).toFixed(2)} GB</div>
+                  <div className="text-sm text-muted-foreground">
+                    {((snap.mem.available / snap.mem.total) * 100).toFixed(2)}%
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )
@@ -351,7 +432,11 @@ export function Dashboard() {
         )
       default:
         return null
+      }
+    } else {
+      return null;
     }
+    
   }
 
   const renderServiceSessions = (serviceName: string) => {
@@ -407,241 +492,245 @@ export function Dashboard() {
     )
   }
 
-  return (
-    <div className="p-6 space-y-6">
-      <h2 className="text-3xl font-bold">{t("dashboard")}</h2>
+  if(snap) {
+    return (
+      <div className="p-6 space-y-6">
+        <h2 className="text-3xl font-bold">{t("dashboard")}</h2>
 
-      <div className="space-y-4">
-        <h3 className="text-xl font-semibold">{t("systemResources")}</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Dialog>
-            <DialogTrigger asChild>
-              <Card className="cursor-pointer hover:shadow-md transition-shadow">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">{t("cpu")}</CardTitle>
-                  <Cpu className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{systemResources.cpu.usage}%</div>
-                  <Progress value={systemResources.cpu.usage} className="mt-2" />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {systemResources.cpu.cores} {t("cores")}
-                  </p>
-                </CardContent>
-              </Card>
-            </DialogTrigger>
-            <DialogContent className="max-w-4xl">
-              <DialogHeader>
-                <DialogTitle className="flex items-center space-x-2">
-                  <Cpu className="h-5 w-5" />
-                  <span>
-                    {t("cpu")} - {t("systemResourceDetails")}
-                  </span>
-                </DialogTitle>
-              </DialogHeader>
-              {renderResourceDetails("cpu")}
-            </DialogContent>
-          </Dialog>
+        <div className="space-y-4">
+          <h3 className="text-xl font-semibold">{t("systemResources")}</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Dialog>
+              <DialogTrigger asChild>
+                <Card className="cursor-pointer hover:shadow-md transition-shadow">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">{t("cpu")}</CardTitle>
+                    <Cpu className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{snap.cpu.global.toFixed(2)}%</div>
+                    <Progress value={snap.cpu.global} className="mt-2" />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {snap.cpu.per_core.length} {t("cores")}
+                    </p>
+                  </CardContent>
+                </Card>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center space-x-2">
+                    <Cpu className="h-5 w-5" />
+                    <span>
+                      {t("cpu")} - {t("systemResourceDetails")}
+                    </span>
+                  </DialogTitle>
+                </DialogHeader>
+                {renderResourceDetails("cpu")}
+              </DialogContent>
+            </Dialog>
 
-          <Dialog>
-            <DialogTrigger asChild>
-              <Card className="cursor-pointer hover:shadow-md transition-shadow">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">{t("memory")}</CardTitle>
-                  <MemoryStick className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{systemResources.memory.used.toFixed(1)} GB</div>
-                  <Progress
-                    value={(systemResources.memory.used / systemResources.memory.total) * 100}
-                    className="mt-2"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {t("of")} {systemResources.memory.total} GB
-                  </p>
-                </CardContent>
-              </Card>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle className="flex items-center space-x-2">
-                  <MemoryStick className="h-5 w-5" />
-                  <span>
-                    {t("memory")} - {t("systemResourceDetails")}
-                  </span>
-                </DialogTitle>
-              </DialogHeader>
-              {renderResourceDetails("memory")}
-            </DialogContent>
-          </Dialog>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Card className="cursor-pointer hover:shadow-md transition-shadow">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">{t("memory")}</CardTitle>
+                    <MemoryStick className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{(snap.mem.used / 1024 / 1024 / 1024).toFixed(2)} GB</div>
+                    <Progress
+                      value={(snap.mem.used / snap.mem.total) * 100}
+                      className="mt-2"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t("of")} {(snap.mem.total / 1024 / 1024 / 1024).toFixed(0)} GB
+                    </p>
+                  </CardContent>
+                </Card>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center space-x-2">
+                    <MemoryStick className="h-5 w-5" />
+                    <span>
+                      {t("memory")} - {t("systemResourceDetails")}
+                    </span>
+                  </DialogTitle>
+                </DialogHeader>
+                {renderResourceDetails("memory")}
+              </DialogContent>
+            </Dialog>
 
-          <Dialog>
-            <DialogTrigger asChild>
-              <Card className="cursor-pointer hover:shadow-md transition-shadow">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">{t("disk")}</CardTitle>
-                  <HardDrive className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{systemResources.disk.used.toFixed(0)} GB</div>
-                  <Progress value={(systemResources.disk.used / systemResources.disk.total) * 100} className="mt-2" />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {t("of")} {systemResources.disk.total} GB
-                  </p>
-                </CardContent>
-              </Card>
-            </DialogTrigger>
-            <DialogContent className="max-w-3xl">
-              <DialogHeader>
-                <DialogTitle className="flex items-center space-x-2">
-                  <HardDrive className="h-5 w-5" />
-                  <span>
-                    {t("disk")} - {t("systemResourceDetails")}
-                  </span>
-                </DialogTitle>
-              </DialogHeader>
-              {renderResourceDetails("disk")}
-            </DialogContent>
-          </Dialog>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Card className="cursor-pointer hover:shadow-md transition-shadow">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">{t("disk")}</CardTitle>
+                    <HardDrive className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{systemResources.disk.used.toFixed(0)} GB</div>
+                    <Progress value={(systemResources.disk.used / systemResources.disk.total) * 100} className="mt-2" />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t("of")} {systemResources.disk.total} GB
+                    </p>
+                  </CardContent>
+                </Card>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center space-x-2">
+                    <HardDrive className="h-5 w-5" />
+                    <span>
+                      {t("disk")} - {t("systemResourceDetails")}
+                    </span>
+                  </DialogTitle>
+                </DialogHeader>
+                {renderResourceDetails("disk")}
+              </DialogContent>
+            </Dialog>
 
-          <Dialog>
-            <DialogTrigger asChild>
-              <Card className="cursor-pointer hover:shadow-md transition-shadow">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">{t("network")}</CardTitle>
-                  <Wifi className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{systemResources.network.download.toFixed(1)} MB/s</div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    ↓ {systemResources.network.download.toFixed(1)} MB/s ↑ {systemResources.network.upload.toFixed(1)}{" "}
-                    MB/s
-                  </p>
-                </CardContent>
-              </Card>
-            </DialogTrigger>
-            <DialogContent className="max-w-3xl">
-              <DialogHeader>
-                <DialogTitle className="flex items-center space-x-2">
-                  <Wifi className="h-5 w-5" />
-                  <span>
-                    {t("network")} - {t("systemResourceDetails")}
-                  </span>
-                </DialogTitle>
-              </DialogHeader>
-              {renderResourceDetails("network")}
-            </DialogContent>
-          </Dialog>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Card className="cursor-pointer hover:shadow-md transition-shadow">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">{t("network")}</CardTitle>
+                    <Wifi className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{systemResources.network.download.toFixed(1)} MB/s</div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      ↓ {systemResources.network.download.toFixed(1)} MB/s ↑ {systemResources.network.upload.toFixed(1)}{" "}
+                      MB/s
+                    </p>
+                  </CardContent>
+                </Card>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center space-x-2">
+                    <Wifi className="h-5 w-5" />
+                    <span>
+                      {t("network")} - {t("systemResourceDetails")}
+                    </span>
+                  </DialogTitle>
+                </DialogHeader>
+                {renderResourceDetails("network")}
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
-      </div>
 
-      <div className="space-y-4">
-        <h3 className="text-xl font-semibold">{t("services")}</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{t("totalServices")}</CardTitle>
-              <Server className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{serviceStats.totalServices}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {serviceStats.activeServices} {t("activeServices").toLowerCase()}
-              </p>
-            </CardContent>
-          </Card>
+        <div className="space-y-4">
+          <h3 className="text-xl font-semibold">{t("services")}</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">{t("totalServices")}</CardTitle>
+                <Server className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{serviceStats.totalServices}</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {serviceStats.activeServices} {t("activeServices").toLowerCase()}
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{t("activeConnections")}</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{serviceStats.totalConnections}</div>
-              <Progress value={(serviceStats.totalConnections / 50) * 100} className="mt-2" />
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">{t("activeConnections")}</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{serviceStats.totalConnections}</div>
+                <Progress value={(serviceStats.totalConnections / 50) * 100} className="mt-2" />
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{t("dataTransfer")}</CardTitle>
-              <HardDrive className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{serviceStats.dataTransfer} MB/s</div>
-              <Progress value={(serviceStats.dataTransfer / 500) * 100} className="mt-2" />
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">{t("dataTransfer")}</CardTitle>
+                <HardDrive className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{serviceStats.dataTransfer} MB/s</div>
+                <Progress value={(serviceStats.dataTransfer / 500) * 100} className="mt-2" />
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{t("serviceStatus")}</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {serviceStats.activeServices}/{serviceStats.totalServices}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">{t("running").toLowerCase()}</p>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">{t("serviceStatus")}</CardTitle>
+                <Activity className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">
+                  {serviceStats.activeServices}/{serviceStats.totalServices}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">{t("running").toLowerCase()}</p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("services")}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {runningServices.map((service, index) => (
-              <Dialog key={index}>
-                <DialogTrigger asChild>
-                  <div className="flex items-center justify-between p-4 border rounded-lg cursor-pointer hover:shadow-md transition-shadow">
-                    <div className="flex items-center space-x-3">
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                          service.status === "running" ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
-                        }`}
-                      >
-                        <Server className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <p className="font-medium">{service.name}</p>
-                          <Badge variant={service.status === "running" ? "default" : "secondary"}>
-                            {t(service.status)}
-                          </Badge>
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("services")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {runningServices.map((service, index) => (
+                <Dialog key={index}>
+                  <DialogTrigger asChild>
+                    <div className="flex items-center justify-between p-4 border rounded-lg cursor-pointer hover:shadow-md transition-shadow">
+                      <div className="flex items-center space-x-3">
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                            service.status === "running" ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+                          }`}
+                        >
+                          <Server className="h-4 w-4" />
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {t("port")}: {service.port} | {t("connections")}: {service.connections}
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <p className="font-medium">{service.name}</p>
+                            <Badge variant={service.status === "running" ? "default" : "secondary"}>
+                              {t(service.status)}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {t("port")}: {service.port} | {t("connections")}: {service.connections}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-medium">{service.dataTransfer.toFixed(1)} MB/s</p>
+                        <p className="text-xs text-muted-foreground">
+                          {t("uptime")}: {formatUptime(service.uptime)}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium">{service.dataTransfer.toFixed(1)} MB/s</p>
-                      <p className="text-xs text-muted-foreground">
-                        {t("uptime")}: {formatUptime(service.uptime)}
-                      </p>
-                    </div>
-                  </div>
-                </DialogTrigger>
-                <DialogContent className="max-w-4xl">
-                  <DialogHeader>
-                    <DialogTitle className="flex items-center space-x-2">
-                      <Server className="h-5 w-5" />
-                      <span>
-                        {service.name} - {t("activeSessions")}
-                      </span>
-                    </DialogTitle>
-                  </DialogHeader>
-                  {renderServiceSessions(service.name)}
-                </DialogContent>
-              </Dialog>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
+                  </DialogTrigger>
+                  <DialogContent className="max-w-4xl">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center space-x-2">
+                        <Server className="h-5 w-5" />
+                        <span>
+                          {service.name} - {t("activeSessions")}
+                        </span>
+                      </DialogTitle>
+                    </DialogHeader>
+                    {renderServiceSessions(service.name)}
+                  </DialogContent>
+                </Dialog>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  } else {
+    return null;
+  }
 }
