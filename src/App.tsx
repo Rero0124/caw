@@ -9,8 +9,9 @@ import { ThemeProvider } from "./components/theme-provider";
 import { LanguageProvider } from "./components/language-provider";
 import { Sidebar } from "./components/sidebar";
 import { BottomNavigation } from "./components/bottom-navigation";
+import { WebServer } from "./components/web-server";
 
-function App() {
+const App = () => {
   const [activeTab, setActiveTab] = useState("dashboard")
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
@@ -20,6 +21,8 @@ function App() {
         return <Dashboard />
       case "file-share":
         return <FileShare />
+      case "web-server": 
+        return <WebServer />
       case "quick-actions":
         return <QuickActions />
       case "personal-data":
@@ -38,16 +41,19 @@ function App() {
   return (
     <ThemeProvider>
       <LanguageProvider>
-        <div  className="flex h-screen bg-background">
+        <div className="flex h-screen bg-background">
           <Sidebar
             activeTab={activeTab}
             onTabChange={setActiveTab}
             isCollapsed={sidebarCollapsed}
             onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
           />
-          <div className="flex-1 relative">
-            <main className="h-full overflow-auto pb-16">{renderContent()}</main>
-            <BottomNavigation onAddShortcut={handleAddShortcut} sidebarCollapsed={sidebarCollapsed} />
+          <div className="flex-1 flex flex-col h-full">
+            <main className="flex-1 min-h-0 overflow-y-auto gap-4">{renderContent()}</main>
+            <BottomNavigation
+              onAddShortcut={handleAddShortcut}
+              sidebarCollapsed={sidebarCollapsed}
+            />
           </div>
         </div>
       </LanguageProvider>

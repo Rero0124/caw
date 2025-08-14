@@ -106,7 +106,7 @@ export function BottomNavigation({ onAddShortcut, sidebarCollapsed }: BottomNavi
 
   return (
     <div
-      className={`fixed bottom-0 ${sidebarCollapsed ? "left-16" : "left-64"} right-0 bg-background border-t border-border transition-all duration-300`}
+      className={`${sidebarCollapsed ? "left-16" : "left-64"} right-0 bg-background border-t border-border transition-all duration-300`}
     >
       <div className="flex items-center justify-center px-4 py-2">
         <div className="flex space-x-2 overflow-x-auto max-w-full">
@@ -135,6 +135,7 @@ export function BottomNavigation({ onAddShortcut, sidebarCollapsed }: BottomNavi
             <div className="mb-1">
               <Plus className="h-5 w-5" />
             </div>
+            <span className="text-xs">+</span>
           </Button>
         </div>
       </div>

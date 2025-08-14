@@ -175,7 +175,7 @@ export function LDAPServer() {
                     <Server className="h-5 w-5" />
                     <span>{t("ldapServiceStatus")}</span>
                   </CardTitle>
-                  <CardDescription>LDAP 서버 호스팅 설정 및 서비스 관리</CardDescription>
+                  <CardDescription>{t("ldapHostingDescription")}</CardDescription>
                 </div>
                 <Badge variant={isServiceRunning ? "default" : "secondary"}>
                   {isServiceRunning ? t("running") : t("stopped")}
@@ -287,7 +287,7 @@ export function LDAPServer() {
                     <Users className="h-5 w-5" />
                     <span>{t("ldapUsers")}</span>
                   </CardTitle>
-                  <CardDescription>LDAP 서버의 사용자 계정 관리</CardDescription>
+                  <CardDescription>{t("ldapUsersDescription")}</CardDescription>
                 </div>
                 <Button onClick={createUser}>
                   <Plus className="h-4 w-4 mr-2" />
@@ -303,7 +303,9 @@ export function LDAPServer() {
                       <div className="font-medium">{user.displayName}</div>
                       <div className="text-sm text-muted-foreground">{user.username}</div>
                       <div className="text-sm text-muted-foreground">{user.email}</div>
-                      <div className="text-xs text-muted-foreground">생성일: {user.createdAt}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {t("createdDate")}: {user.createdAt}
+                      </div>
                     </div>
                     <div className="flex items-center space-x-2">
                       <div className="flex flex-wrap gap-1">
@@ -336,7 +338,7 @@ export function LDAPServer() {
                     <Shield className="h-5 w-5" />
                     <span>{t("ldapGroups")}</span>
                   </CardTitle>
-                  <CardDescription>LDAP 서버의 그룹 관리</CardDescription>
+                  <CardDescription>{t("ldapGroupsDescription")}</CardDescription>
                 </div>
                 <Button onClick={createGroup}>
                   <Plus className="h-4 w-4 mr-2" />
@@ -351,12 +353,16 @@ export function LDAPServer() {
                     <div className="space-y-1">
                       <div className="font-medium">{group.name}</div>
                       <div className="text-sm text-muted-foreground">{group.description}</div>
-                      <div className="text-xs text-muted-foreground">생성일: {group.createdAt}</div>
-                      <div className="text-xs text-muted-foreground">멤버: {group.members.join(", ") || "없음"}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {t("createdDate")}: {group.createdAt}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {t("members")}: {group.members.join(", ") || t("none")}
+                      </div>
                     </div>
                     <div className="flex items-center space-x-2">
                       <Badge variant="outline">
-                        {group.members.length} {group.members.length === 1 ? "member" : "members"}
+                        {group.members.length} {group.members.length === 1 ? t("member") : t("members_plural")}
                       </Badge>
                       <Button variant="ghost" size="sm">
                         <Edit className="h-4 w-4" />

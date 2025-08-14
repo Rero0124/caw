@@ -19,7 +19,7 @@ interface DataItem {
 }
 
 export function PersonalData() {
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
   const [dataItems, setDataItems] = useState<DataItem[]>([])
   const [newItem, setNewItem] = useState({ title: "", content: "", type: "note" as const })
 
@@ -86,6 +86,17 @@ export function PersonalData() {
       default:
         return ""
     }
+  }
+
+  const getLocaleDateString = (dateString: string) => {
+    const date = new Date(dateString)
+    const localeMap = {
+      ko: "ko-KR",
+      en: "en-US",
+      ja: "ja-JP",
+      zh: "zh-CN",
+    }
+    return date.toLocaleDateString(localeMap[language])
   }
 
   return (
@@ -170,9 +181,7 @@ export function PersonalData() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-sm text-muted-foreground mb-2">
-                        {new Date(item.createdAt).toLocaleDateString("ko-KR")}
-                      </p>
+                      <p className="text-sm text-muted-foreground mb-2">{getLocaleDateString(item.createdAt)}</p>
                       <p className="text-sm line-clamp-3">{item.content}</p>
                     </CardContent>
                   </Card>

@@ -58,6 +58,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 export function useTheme() {
   const context = useContext(ThemeProviderContext)
   if (context === undefined) {
+    // 에러 상황에서는 기본 영어 메시지 사용 (언어 컨텍스트에 접근할 수 없으므로)
     throw new Error("useTheme must be used within a ThemeProvider")
   }
   return context

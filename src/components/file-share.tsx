@@ -66,21 +66,6 @@ export function FileShare() {
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 10
 
-  const commonFolderPaths = [
-    { label: "Home", path: "/home/user" },
-    { label: "Downloads", path: "/home/user/Downloads" },
-    { label: "Documents", path: "/home/user/Documents" },
-    { label: "Desktop", path: "/home/user/Desktop" },
-    { label: "Pictures", path: "/home/user/Pictures" },
-    { label: "Videos", path: "/home/user/Videos" },
-    { label: "Music", path: "/home/user/Music" },
-    { label: "Public", path: "/home/user/Public" },
-    { label: "Shared", path: "/home/shared" },
-    { label: "Temp", path: "/tmp" },
-    { label: "Var", path: "/var" },
-    { label: "Opt", path: "/opt" },
-  ]
-
   useEffect(() => {
     const savedSftpService = localStorage.getItem("sftpService")
     const savedSmbService = localStorage.getItem("smbService")
@@ -146,7 +131,7 @@ export function FileShare() {
 
       const fullPath = `/home/user/${folderName}`
 
-      console.log("SFTP 폴더 선택:", { relativePath, folderName, fullPath })
+      console.log(t("sftpFolderSelection"), { relativePath, folderName, fullPath })
 
       saveSftpService({ ...sftpService, sharedFolder: fullPath })
     }
@@ -163,7 +148,7 @@ export function FileShare() {
 
       const fullPath = `/home/user/${folderName}`
 
-      console.log("SMB 폴더 선택:", { relativePath, folderName, fullPath })
+      console.log(t("smbFolderSelection"), { relativePath, folderName, fullPath })
 
       saveSmbService({ ...smbService, sharedFolder: fullPath })
     }
@@ -426,7 +411,7 @@ export function FileShare() {
                       <TableHead>{t("ipAddress")}</TableHead>
                       <TableHead>{t("action")}</TableHead>
                       <TableHead>{t("file")}</TableHead>
-                      <TableHead>Service</TableHead>
+                      <TableHead>{t("service")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

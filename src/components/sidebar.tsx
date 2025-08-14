@@ -19,7 +19,8 @@ export function Sidebar({ activeTab, onTabChange, isCollapsed, onToggle }: Sideb
 
   const menuItems = [
     { id: "dashboard", icon: LayoutDashboard, label: t("dashboard") },
-    { id: "file-share", icon: FolderOpen, label: t("fileShare") },
+    { id: "file-share", icon: FolderOpen, label: t("advancedFileShare") },
+    { id: "web-server", icon: Globe, label: t("webServer") },
     { id: "quick-actions", icon: Zap, label: t("quickActions") },
     { id: "personal-data", icon: Database, label: t("personalData") },
     { id: "ldap-server", icon: Server, label: t("ldapServer") },
@@ -100,10 +101,10 @@ export function Sidebar({ activeTab, onTabChange, isCollapsed, onToggle }: Sideb
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ko">한국어</SelectItem>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="ja">日本語</SelectItem>
-                <SelectItem value="zh">中文</SelectItem>
+                <SelectItem value="ko">{t("korean")}</SelectItem>
+                <SelectItem value="en">{t("english")}</SelectItem>
+                <SelectItem value="ja">{t("japanese")}</SelectItem>
+                <SelectItem value="zh">{t("chinese")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
