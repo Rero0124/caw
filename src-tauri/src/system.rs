@@ -1,14 +1,15 @@
 use cfg_if::cfg_if;
 use mac_address::mac_address_by_name;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter};
+use regex::Regex;
 
-use sysinfo::{Components, CpuRefreshKind, Disks, Networks, Process, RefreshKind, System};
+use sysinfo::{Components, CpuRefreshKind, Disk, Disks, Networks, Process, ProcessRefreshKind, RefreshKind, System};
 
 #[derive(serde::Serialize, Clone)]
 pub struct CpuProcess {
@@ -49,6 +50,8 @@ pub struct DiskPart {
 
 #[derive(serde::Serialize, Clone)]
 pub struct DiskStats {
+    pub total: u64,
+    pub used: u64,
     pub parts: Vec<DiskPart>,
     pub read_bps: Option<u64>, // Δ 계산 결과(없으면 None)
     pub write_bps: Option<u64>,
@@ -59,6 +62,7 @@ pub struct NicStats {
     pub name: String,
     pub ipv4: Vec<String>,
     pub mac: Vec<String>,
+    pub subnet: Vec<String>,
     pub speed_mbps: Option<u64>,
     pub rx_bps: u64,
     pub tx_bps: u64,
@@ -99,7 +103,7 @@ pub fn spawn_metrics_broadcaster(app: AppHandle) {
                 let snap = build_snapshot(prev.as_ref());
                 prev = Some((Instant::now(), PreCounters::from(&snap)));
                 *cache_upd.lock().unwrap() = Some(snap);
-                thread::sleep(Duration::from_millis(30));
+                thread::sleep(Duration::from_millis(120));
             }
         });
     }
@@ -259,7 +263,7 @@ fn build_snapshot(prev: Option<&(Instant, PreCounters)>) -> Snapshot {
     let mut sys = System::new_with_specifics(RefreshKind::everything());
     sys.refresh_cpu_all();
     sys.refresh_memory();
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    sys.refresh_processes_specifics(sysinfo::ProcessesToUpdate::All, true, ProcessRefreshKind::everything());
 
     // ── CPU
     let per_core: Vec<f32> = sys.cpus().iter().map(|c| c.cpu_usage()).collect();
@@ -328,11 +332,30 @@ fn build_snapshot(prev: Option<&(Instant, PreCounters)>) -> Snapshot {
 
     // ── 디스크 파티션
     let disks = Disks::new_with_refreshed_list();
+    let mut seen_disk = HashSet::new();
+    let mut total_used = 0u64;
+    let mut total_size = 0u64;
+    
     let parts = disks
         .iter()
         .map(|d| {
             let total = d.total_space();
             let used = total.saturating_sub(d.available_space());
+            let part_name = d.name().to_string_lossy().to_string();
+            
+            let re = Regex::new(r"^(?P<base>nvme\d+n\d+|disk\d+|sd[a-z]|vd[a-z]|xvd[a-z]|mmcblk\d+)").unwrap();
+            
+            let disk_name = match re.captures(&part_name) {
+                Some(caps) => caps["base"].to_string(),
+                None => part_name.clone()
+            };
+
+            if !seen_disk.contains(&disk_name) {
+                seen_disk.insert(disk_name.clone());
+                total_used = total_used.saturating_add(used);
+                total_size = total_size.saturating_add(total);
+            } 
+
             DiskPart {
                 name: d.name().to_string_lossy().to_string(),
                 mount: d.mount_point().to_string_lossy().to_string(),
@@ -396,11 +419,13 @@ fn build_snapshot(prev: Option<&(Instant, PreCounters)>) -> Snapshot {
 
         // 기본 정보
         let mut ipv4 = Vec::new();
+        let mut sub = Vec::new();
         let mut mac = Vec::new();
         if let Some(aslist) = addrs.as_ref() {
             for a in aslist.iter().filter(|a| a.name == name) {
                 if let get_if_addrs::IfAddr::V4(v4) = &a.addr {
                     ipv4.push(v4.ip.to_string());
+                    sub.push(v4.netmask.to_string());
                 }
 
                 mac.push(
@@ -426,6 +451,7 @@ fn build_snapshot(prev: Option<&(Instant, PreCounters)>) -> Snapshot {
         net.push(NicStats {
             name,
             ipv4,
+            subnet: sub,
             mac,
             speed_mbps,
             rx_bps,
@@ -439,6 +465,8 @@ fn build_snapshot(prev: Option<&(Instant, PreCounters)>) -> Snapshot {
         cpu,
         mem,
         disk: DiskStats {
+            total: total_size,
+            used: total_used,
             parts,
             read_bps,
             write_bps,

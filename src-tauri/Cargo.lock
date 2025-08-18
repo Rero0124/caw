@@ -459,6 +459,7 @@ dependencies = [
  "cfg-if",
  "get_if_addrs",
  "mac_address",
+ "regex",
  "serde",
  "serde_json",
  "sysinfo",

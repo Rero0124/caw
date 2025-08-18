@@ -15,8 +15,8 @@ import { truncate } from "../lib/utils"
 type Snapshot = {
   cpu: { global: number; per_core: number[]; freq_ghz: number; cores: number; temp_c?: number | null; top: { name: string; cpu: number; mem: number }[] };
   mem: { total: number; used: number; available: number; cached?: number | null; buffers?: number | null; swap_total: number; swap_used: number };
-  disk: { parts: { name: string; mount: string; fs: string; total: number; used: number }[]; read_bps?: number | null; write_bps?: number | null };
-  net: { name: string; ipv4: string[]; mac?: string | null; speed_mbps?: number | null; rx_bps: number; tx_bps: number; rx_packets: number; tx_packets: number }[];
+  disk: { total: number, used: number, parts: { name: string; mount: string; fs: string; total: number; used: number }[]; read_bps?: number | null; write_bps?: number | null };
+  net: { name: string; ipv4: string[]; subnet: string[], mac: string[]; speed_mbps?: number | null; rx_bps: number; tx_bps: number; rx_packets: number; tx_packets: number }[];
 };
 
 export function Dashboard() {
@@ -260,7 +260,7 @@ switch (resource) {
                   {snap.cpu.top.map((process, index) => (
                     <div key={index} className="flex justify-between text-sm">
                       <span>{truncate(process.name, 20)}</span>
-                      <span>{process.cpu.toFixed(3)}%</span>
+                      <span>{(process.cpu * 100).toFixed(2)}%</span>
                     </div>
                   ))}
                 </div>
@@ -268,7 +268,7 @@ switch (resource) {
             </div>
             <div className="grid grid-cols-3 gap-4 pt-4 border-t">
               <div className="text-center">
-                <div className="text-2xl font-bold">{snap.cpu.temp_c ? `${snap.cpu.temp_c}°C` : "N/A"}</div>
+                <div className="text-2xl font-bold">{snap.cpu.temp_c ? `${snap.cpu.temp_c.toFixed(2)}°C` : "N/A"}</div>
                 <div className="text-sm text-muted-foreground">{t("temperature")}</div>
               </div>
               <div className="text-center">
@@ -353,29 +353,29 @@ switch (resource) {
         return (
           <div className="space-y-4">
             <div className="space-y-3">
-              {detailData.disk.partitions.map((partition, index) => (
+              {snap.disk.parts.map((partition, index) => (
                 <div key={index} className="border rounded-lg p-3">
                   <div className="flex justify-between items-center mb-2">
                     <span className="font-medium">{partition.name}</span>
-                    <span className="text-sm text-muted-foreground">{partition.fileSystem}</span>
+                    <span className="text-sm text-muted-foreground">{partition.fs}</span>
                   </div>
                   <Progress value={(partition.used / partition.total) * 100} className="mb-2" />
                   <div className="flex justify-between text-sm text-muted-foreground">
                     <span>
-                      {partition.used} GB / {partition.total} GB
+                      {(partition.used / 1024 / 1024 / 1024).toFixed(2)} GB / {(partition.total / 1024 / 1024 / 1024).toFixed(2)} GB
                     </span>
-                    <span>{partition.mountPoint}</span>
+                    <span>{partition.mount}</span>
                   </div>
                 </div>
               ))}
             </div>
             <div className="grid grid-cols-2 gap-4 pt-4 border-t">
               <div className="text-center">
-                <div className="text-2xl font-bold">{systemResources.disk.readSpeed} MB/s</div>
+                <div className="text-2xl font-bold">{snap.disk.read_bps} MB/s</div>
                 <div className="text-sm text-muted-foreground">{t("readSpeed")}</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold">{systemResources.disk.writeSpeed} MB/s</div>
+                <div className="text-2xl font-bold">{snap.disk.write_bps} MB/s</div>
                 <div className="text-sm text-muted-foreground">{t("writeSpeed")}</div>
               </div>
             </div>
@@ -386,36 +386,42 @@ switch (resource) {
           <div className="space-y-4">
             <div className="space-y-3">
               <h4 className="font-medium">{t("networkInterfaces")}</h4>
-              {detailData.network.interfaces.map((iface, index) => (
-                <div key={index} className="border rounded-lg p-3">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-medium">{iface.name}</span>
-                    <Badge variant={index < 2 ? "default" : "secondary"}>{index < 2 ? "Active" : "Inactive"}</Badge>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-sm mb-3">
-                    <div>IP: {iface.ip}</div>
-                    <div>MAC: {iface.mac}</div>
-                    <div>
-                      {t("subnetMask")}: {iface.subnetMask}
+              {snap.net.map((iface, index) => {
+                if(iface.ipv4.length === 0)  {
+                  return <></>
+                } else {
+                  return (
+                  <div key={index} className="border rounded-lg p-3">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-medium">{iface.name}</span>
+                      <Badge variant={index < 2 ? "default" : "secondary"}>{index < 2 ? "Active" : "Inactive"}</Badge>
                     </div>
-                    <div>Speed: {iface.speed}</div>
-                  </div>
-                  {index < 2 && (
-                    <div className="space-y-2 pt-2 border-t">
-                      <div className="flex justify-between text-xs">
-                        <span>↓ {t("download")}</span>
-                        <span>{(Math.random() * 50 + 10).toFixed(1)} MB/s</span>
+                    <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                      <div>IP: {iface.ipv4}</div>
+                      <div>MAC: {iface.mac}</div>
+                      <div>
+                        {t("subnetMask")}: {iface.subnet}
                       </div>
-                      <Progress value={Math.random() * 80 + 10} className="h-2" />
-                      <div className="flex justify-between text-xs">
-                        <span>↑ {t("upload")}</span>
-                        <span>{(Math.random() * 20 + 5).toFixed(1)} MB/s</span>
-                      </div>
-                      <Progress value={Math.random() * 60 + 5} className="h-2" />
+                      <div>Speed: {iface.speed_mbps}</div>
                     </div>
-                  )}
-                </div>
-              ))}
+                    {index < 2 && (
+                      <div className="space-y-2 pt-2 border-t">
+                        <div className="flex justify-between text-xs">
+                          <span>↓ {t("download")}</span>
+                          <span>{(Math.random() * 50 + 10).toFixed(1)} MB/s</span>
+                        </div>
+                        <Progress value={Math.random() * 80 + 10} className="h-2" />
+                        <div className="flex justify-between text-xs">
+                          <span>↑ {t("upload")}</span>
+                          <span>{(Math.random() * 20 + 5).toFixed(1)} MB/s</span>
+                        </div>
+                        <Progress value={Math.random() * 60 + 5} className="h-2" />
+                      </div>
+                    )}
+                  </div>
+                  )
+                }
+              })}
             </div>
 
             <div className="grid grid-cols-2 gap-4 pt-4 border-t">
@@ -569,10 +575,10 @@ switch (resource) {
                     <HardDrive className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{systemResources.disk.used.toFixed(0)} GB</div>
-                    <Progress value={(systemResources.disk.used / systemResources.disk.total) * 100} className="mt-2" />
+                    <div className="text-2xl font-bold">{(snap.disk.used / 1024 / 1024 / 1024).toFixed(2)} GB</div>
+                    <Progress value={(snap.disk.used / snap.disk.total) * 100} className="mt-2" />
                     <p className="text-xs text-muted-foreground mt-1">
-                      {t("of")} {systemResources.disk.total} GB
+                      {t("of")} {(snap.disk.total / 1024 / 1024 / 1024).toFixed(2)} GB
                     </p>
                   </CardContent>
                 </Card>
